@@ -1,0 +1,66 @@
+# Docker Compose stack cho ETL DEV/TEST environment
+# Production deployment xem ../04-target-design-and-migration-plan.md mục 6.2
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: dau-postgres
+    environment:
+      POSTGRES_DB: ${TARGET_DB:-dau_university}
+      POSTGRES_USER: ${TARGET_USER:-dau_admin}
+      POSTGRES_PASSWORD: ${TARGET_PASSWORD:-YourStrong@Pass1}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./logs:/logs
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER}"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    container_name: dau-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minio_admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-YourStrong@Pass1}
+    volumes:
+      - miniodata:/data
+    ports:
+      - "9000:9000"     # S3 API
+      - "9001:9001"     # Web UI
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: dau-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@dau.local
+      PGADMIN_DEFAULT_PASSWORD: ${TARGET_PASSWORD:-YourStrong@Pass1}
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+    volumes:
+      - pgadmin:/var/lib/pgadmin
+    ports:
+      - "8080:80"
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+    driver: local
+  miniodata:
+    driver: local
+  pgadmin:
+    driver: local

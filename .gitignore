@@ -1,0 +1,38 @@
+# Source backups (heavy — go on GDrive instead)
+*.bak
+*_backup_*.bak
+
+# Generated outputs
+etl/output/*.dump.gz
+etl/output/*.tar.gz
+etl/output/*.bak
+etl/logs/
+
+# Python
+**/.venv/
+**/__pycache__/
+**/*.pyc
+**/.pytest_cache/
+
+# Secrets
+**/.env
+**/secrets/
+
+# Docker volumes (managed by Docker)
+**/pgdata/
+**/miniodata/
+**/pgadmin/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Temp verification files (em dùng trong khi develop)
+_*.txt
+_*.csv
+_*.sql

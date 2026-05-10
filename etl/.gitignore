@@ -1,0 +1,36 @@
+# Secrets
+.env
+*.env
+secrets/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Logs
+logs/
+*.log
+
+# Heavy output (GDrive instead) — only commit etl_report_*.md + etl_state.json
+output/*.dump.gz
+output/*.tar.gz
+output/*.bak
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Docker volumes (managed by Docker, not source)
+pgdata/
+miniodata/
+pgadmin/
