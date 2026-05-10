@@ -160,39 +160,76 @@ python run.py validate
 
 ---
 
-## Phase 4: Output
+## Phase 4: Output (auto-commit + auto-upload)
 
-**Strategy mới**: GitHub LFS free chỉ 1GB → dump 500MB-1GB sẽ ăn hết quota nhanh. Em tách:
-- **GitHub**: chỉ push code + report MD nhẹ (~50KB)
-- **GDrive**: push pg_dump.gz + MinIO blob archive (heavy)
+`vps-run-etl.sh` **tự động** commit report nhẹ lên GitHub + upload heavy files lên GDrive khi chạy xong, **nếu** có config:
+
+### Setup auto-commit (1 lần, trong `.env`)
 
 ```bash
-cd /opt/dau-uni/etl
-
-# 4.1 Tạo dump + report
-docker exec dau-postgres pg_dump -U dau_admin -Fc dau_university | gzip > output/dau_$(date +%Y%m%d_%H%M).dump.gz
-docker run --rm -v dau-uni_miniodata:/data -v $(pwd)/output:/out alpine \
-    sh -c "cd /data && tar czf /out/minio_$(date +%Y%m%d_%H%M).tar.gz ."
-python scripts/dump_summary.py     # tạo etl_report_*.md (nhẹ)
-
-ls -lh output/
-# dau_*.dump.gz       ~500MB-1GB  → GDrive
-# minio_*.tar.gz      ~3GB        → GDrive
-# etl_report_*.md     ~50KB       → GitHub
-
-# 4.2 Push report nhẹ lên GitHub
-git add etl/output/etl_report_*.md etl/output/etl_state.json
-git commit -m "data: ETL run $(date +%Y-%m-%d)"
-git push origin main
-
-# 4.3 Push dump+blob lên GDrive
-rclone copy output/dau_*.dump.gz gdrive:dau-uni-output/
-rclone copy output/minio_*.tar.gz gdrive:dau-uni-output/
+nano /opt/dau-uni/etl/.env
 ```
 
-Trên Windows local:
-- `git pull` để có report nhẹ → em đọc verify trạng thái
-- Cần data thật: `rclone copy gdrive:dau-uni-output/dau_*.dump.gz .`
+```ini
+# GitHub auto-push report nhẹ (~50KB Markdown + JSON)
+GITHUB_PAT=github_pat_XXXXXXXXX_or_ghp_XXXXX
+GITHUB_REPO=haodpsut/dau-uni-migration
+GIT_USER_EMAIL=haodp.ai@gmail.com
+GIT_USER_NAME=Phuc Hao Do
+
+# GDrive auto-upload heavy (pg_dump.gz, minio.tar.gz)
+GDRIVE_OUTPUT_PATH=gdrive:dau-uni-output
+```
+
+Note: tạo folder `dau-uni-output` trong GDrive trước, hoặc rclone tự tạo lần đầu upload.
+
+### Strategy phân chia
+
+- **GitHub** (qua auto-commit): code + `etl_report_*.md` + `etl_state.json` (≤100KB)
+- **GDrive** (qua rclone): `dau_*.dump.gz` (~500MB) + `minio_*.tar.gz` (~3GB)
+
+### Khi `vps-run-etl.sh` chạy xong
+
+Output cuối:
+```
+✓ Phase 1 complete (HRM)
+✓ Phase 2 complete (EDU)
+✓ Phase 3 complete (EDU_DAU_DATA)
+=== Finalize ===
+  Creating pg_dump.gz...
+  Bundling MinIO blobs...
+  Generating report (~50KB)...
+=== Auto-commit report → GitHub ===
+  ✓ Pushed report to GitHub
+=== Auto-upload heavy output → gdrive:dau-uni-output ===
+  ✓ Uploaded dau_*.dump.gz
+  ✓ Uploaded minio_*.tar.gz
+✓ ETL COMPLETE
+```
+
+### Tắt auto bằng cách để trống config
+
+Nếu chỉ muốn manual:
+```ini
+GITHUB_PAT=                  # để trống → skip auto-commit
+GDRIVE_OUTPUT_PATH=          # để trống → skip upload
+```
+
+### Trên Windows local (xem trạng thái)
+
+```bash
+cd C:\Users\DEXP\dau-uni-migration
+git pull                     # Lấy report mới
+cat etl/output/etl_report_*.md    # Markdown đẹp với row counts + validation
+```
+
+### Cần lấy data thật về local
+
+```powershell
+# Cài rclone trên Windows nếu chưa có: https://rclone.org/downloads/
+rclone copy gdrive:dau-uni-output/dau_*.dump.gz .
+rclone copy gdrive:dau-uni-output/minio_*.tar.gz .
+```
 
 ---
 

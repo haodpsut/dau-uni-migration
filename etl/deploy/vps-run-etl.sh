@@ -182,23 +182,108 @@ finalize() {
     local stamp=$(date +%Y%m%d_%H%M)
     log "Creating pg_dump.gz..."
     docker exec dau-postgres pg_dump -U dau_admin -Fc dau_university | gzip > "output/dau_${stamp}.dump.gz"
+
+    log "Bundling MinIO blobs..."
+    docker run --rm \
+        -v "$(docker inspect dau-minio --format '{{(index .Mounts 0).Name}}'):/data" \
+        -v "$(pwd)/output:/out" \
+        alpine sh -c "cd /data && tar czf /out/minio_${stamp}.tar.gz . 2>/dev/null || echo 'minio archive skipped'"
+
+    log "Generating report (~50KB)..."
+    python scripts/dump_summary.py
+    python run.py validate
+    python run.py status
+
     ls -lh output/
 
-    log "Generating Markdown summary report (~50KB, push GitHub easily)..."
-    python scripts/dump_summary.py
-
-    log "Running validate..."
-    python run.py validate
-
-    log "Running status..."
-    python run.py status
+    auto_commit_report "$stamp"
+    auto_upload_gdrive "$stamp"
 
     log ""
     log "${G}════════════════════════════════════════${N}"
     log "${G} ✓ ETL COMPLETE${N}"
     log "${G}════════════════════════════════════════${N}"
-    log "Output: output/dau_${stamp}.dump.gz"
-    log "Next: git add + commit + push (with LFS)"
+    log "Output local: $(pwd)/output/"
+}
+
+# =============================================================================
+# Auto-commit report → GitHub
+# =============================================================================
+
+auto_commit_report() {
+    local stamp=$1
+    if [ -z "${GITHUB_PAT:-}" ]; then
+        warn "GITHUB_PAT not set in .env — skip auto-commit"
+        warn "  Manually: git add etl/output/etl_report_*.md && git commit && git push"
+        return 0
+    fi
+
+    log "=== Auto-commit report → GitHub ==="
+
+    # Setup git credentials (one-time per session)
+    local repo_owner="${GITHUB_REPO%%/*}"
+    git config --global user.email "${GIT_USER_EMAIL:-haodp.ai@gmail.com}"
+    git config --global user.name "${GIT_USER_NAME:-Phuc Hao Do}"
+    git config --global credential.helper store
+    echo "https://${repo_owner}:${GITHUB_PAT}@github.com" > ~/.git-credentials
+    chmod 600 ~/.git-credentials
+
+    # Find repo root (parent of etl/)
+    local repo_root="$(cd .. && pwd)"
+    cd "$repo_root"
+
+    # Add light files only
+    git add etl/output/etl_report_*.md etl/output/etl_state.json 2>/dev/null || true
+
+    if git diff --cached --quiet; then
+        warn "  No changes to commit"
+    else
+        git commit -m "data: ETL run ${stamp}" \
+            -m "Automated commit from VPS after sequential ETL pipeline." \
+            >/dev/null 2>&1
+        log "  Pushing to GitHub..."
+        if git push origin main 2>&1 | tail -3; then
+            log "  ${G}✓ Pushed report to GitHub${N}"
+        else
+            warn "  Push failed — credentials may be invalid. Check GITHUB_PAT in .env"
+        fi
+    fi
+
+    cd - >/dev/null
+}
+
+# =============================================================================
+# Auto-upload heavy output → GDrive
+# =============================================================================
+
+auto_upload_gdrive() {
+    local stamp=$1
+    if [ -z "${GDRIVE_OUTPUT_PATH:-}" ]; then
+        warn "GDRIVE_OUTPUT_PATH not set in .env — skip auto-upload"
+        warn "  Manually: rclone copy output/*.gz ${GDRIVE_OUTPUT_PATH:-gdrive:OUTPUT_FOLDER}/"
+        return 0
+    fi
+
+    log "=== Auto-upload heavy output → ${GDRIVE_OUTPUT_PATH} ==="
+
+    if ! command -v rclone &>/dev/null; then
+        warn "  rclone not installed — skip upload"
+        return 0
+    fi
+
+    if rclone copy "output/dau_${stamp}.dump.gz" "${GDRIVE_OUTPUT_PATH}/" --progress 2>&1 | tail -3; then
+        log "  ${G}✓ Uploaded dau_${stamp}.dump.gz${N}"
+    else
+        warn "  dump.gz upload failed"
+    fi
+
+    if [ -f "output/minio_${stamp}.tar.gz" ]; then
+        if rclone copy "output/minio_${stamp}.tar.gz" "${GDRIVE_OUTPUT_PATH}/" --progress 2>&1 | tail -3; then
+            log "  ${G}✓ Uploaded minio_${stamp}.tar.gz${N}"
+        else
+            warn "  minio.tar.gz upload failed"
+        fi
+    fi
 }
 
 # =============================================================================
@@ -208,10 +293,26 @@ finalize() {
 main() {
     cd "$(dirname "$0")/.."
     [ -f .env ] || fail "Missing .env file. Run: cp .env.example .env"
+
+    # Export .env variables (for GITHUB_PAT, GDRIVE_OUTPUT_PATH, etc.)
+    set -a
+    source .env
+    set +a
+
     source .venv/bin/activate || fail "Run: python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt"
 
     log "Starting sequential ETL pipeline"
     log "Strategy: process each .bak → ETL → drop → next"
+    if [ -n "${GITHUB_PAT:-}" ]; then
+        log "Auto-commit report:  ${G}ON${N} → ${GITHUB_REPO:-?}"
+    else
+        log "Auto-commit report:  ${Y}OFF${N} (set GITHUB_PAT in .env)"
+    fi
+    if [ -n "${GDRIVE_OUTPUT_PATH:-}" ]; then
+        log "Auto-upload GDrive:  ${G}ON${N} → ${GDRIVE_OUTPUT_PATH}"
+    else
+        log "Auto-upload GDrive:  ${Y}OFF${N} (set GDRIVE_OUTPUT_PATH in .env)"
+    fi
     log ""
 
     phase_hrm
