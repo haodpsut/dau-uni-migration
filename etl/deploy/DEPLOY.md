@@ -77,55 +77,36 @@ Sau upload xong:
 
 ---
 
-## Phase 2: VPS one-time setup (~10 phút)
+## Phase 2: VPS one-time setup (~5 phút)
 
 SSH vào VPS:
 
 ```bash
-# 2.1 Install Docker + Compose
-curl -fsSL https://get.docker.com | sh
-sudo usermod -aG docker $USER       # logout/login để áp dụng
-sudo apt install -y docker-compose-plugin git python3-venv python3-pip
+# 2.1 Run setup script (cài Docker + Python + git-lfs + swap)
+curl -fsSL https://raw.githubusercontent.com/haodpsut/dau-uni-migration/main/etl/deploy/vps-setup.sh | bash
 
-# 2.2 Install rclone
-curl https://rclone.org/install.sh | sudo bash
-
-# 2.3 Configure rclone for Google Drive (interactive)
-rclone config
-# > n (new remote)
-# > name: gdrive
-# > Storage: 18 (Google Drive)
-# > client_id: (Enter cho default, hoặc tự tạo OAuth credentials cho rate limit cao hơn)
-# > client_secret: (Enter)
-# > scope: 1 (Full access)
-# > root_folder_id: (Enter)
-# > service_account_file: (Enter)
-# > Edit advanced config: n
-# > Use auto config: n  (vì server không có browser)
-# > rclone sẽ in URL → mở browser local, login, copy code → paste vào VPS terminal
-# > Configure as Shared Drive: n
-# > Yes this is OK
-# > q (quit)
-
-# 2.4 Test rclone
-rclone ls gdrive:dau-uni-backup
-# → Phải thấy 3 file .bak
-
-# 2.5 Clone code repo
-mkdir -p /opt/dau-uni
-cd /opt/dau-uni
-git clone https://github.com/<you>/<repo>.git .
+# 2.2 Clone code repo
+mkdir -p /opt/dau-uni && cd /opt/dau-uni
+git clone https://github.com/haodpsut/dau-uni-migration.git .
 cd etl
 
-# 2.6 Setup Python venv + deps
+# 2.3 Setup Python venv + deps (gdown sẽ được cài tự động ở đây)
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 
-# 2.7 Configure .env
+# 2.4 Configure .env (paste PAT, leave rest default)
 cp .env.example .env
-nano .env       # sửa các giá trị TARGET_*, MINIO_*, SOURCE_PASSWORD nếu cần
+nano .env
 ```
+
+Chỉ cần đảm bảo 2 giá trị này có trong `.env`:
+```ini
+GDRIVE_BACKUP_FOLDER_ID=1OzCtCJ7AVcR_Ox0owOtKe7DFfFT72zJz
+GITHUB_PAT=ghp_XXXXXXXXXXXXXXXXX     # ⬅ paste PAT
+```
+
+> **Không cần `rclone config` OAuth** — script dùng `gdown` đọc thẳng từ folder GDrive public.
 
 ---
 

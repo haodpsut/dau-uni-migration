@@ -13,7 +13,7 @@ R='\033[0;31m'
 N='\033[0m'
 
 # Config
-GDRIVE_REMOTE="${GDRIVE_REMOTE:-gdrive:dau-uni-backup}"
+GDRIVE_FOLDER_ID="${GDRIVE_BACKUP_FOLDER_ID:-1OzCtCJ7AVcR_Ox0owOtKe7DFfFT72zJz}"
 BAK_DIR="/tmp/dau-bak"
 MSSQL_CONTAINER="mssql-temp"
 MSSQL_PASS="${SOURCE_PASSWORD:-YourStrong@Pass1}"
@@ -27,6 +27,29 @@ mkdir -p "$BAK_DIR"
 log()    { echo -e "${G}[$(date +%H:%M:%S)]${N} $*"; }
 warn()   { echo -e "${Y}[$(date +%H:%M:%S)]${N} $*"; }
 fail()   { echo -e "${R}[$(date +%H:%M:%S)]${N} $*"; exit 1; }
+
+# Download all .bak files from public GDrive folder once at start
+download_all_baks() {
+    if [ -f "$BAK_DIR/.downloaded" ]; then
+        log "  .bak files already downloaded"
+        ls -lh "$BAK_DIR"/*.bak 2>/dev/null
+        return 0
+    fi
+    log "Downloading 3 .bak files from GDrive folder $GDRIVE_FOLDER_ID..."
+    log "  (~22GB total — 5-10 phút tùy bandwidth)"
+
+    gdown --folder "https://drive.google.com/drive/folders/$GDRIVE_FOLDER_ID" \
+        -O "$BAK_DIR" --remaining-ok \
+        || fail "gdown download failed. Check folder is shared 'Anyone with link can view'"
+
+    # gdown nested files into a subfolder named after folder — flatten
+    find "$BAK_DIR" -mindepth 2 -name "*.bak" -exec mv {} "$BAK_DIR/" \;
+    find "$BAK_DIR" -mindepth 1 -type d -empty -delete
+
+    ls -lh "$BAK_DIR"/*.bak
+    touch "$BAK_DIR/.downloaded"
+    log "  ✓ All .bak downloaded"
+}
 
 check_disk() {
     local need_gb=$1
@@ -97,10 +120,8 @@ phase_hrm() {
     log "=== Phase 1: HRM_DAU ==="
     check_disk 2
 
-    local bak=$(rclone ls "$GDRIVE_REMOTE" | awk '/HRM_DAU.*bak$/ {print $2; exit}')
-    [ -z "$bak" ] && fail "HRM_DAU.bak not found in $GDRIVE_REMOTE"
-    log "Downloading $bak..."
-    rclone copy "$GDRIVE_REMOTE/$bak" "$BAK_DIR/" --progress
+    local bak=$(ls "$BAK_DIR" 2>/dev/null | grep -E "^HRM_DAU.*\.bak$" | head -1)
+    [ -z "$bak" ] && fail "HRM_DAU.bak not in $BAK_DIR (run download_all_baks first)"
 
     ensure_mssql_running
     restore_bak "$bak" "HRM_ORG2" "HRM_ORG2_log" "HRM_DAU"
@@ -111,7 +132,7 @@ phase_hrm() {
 
     drop_mssql_db "HRM_DAU"
     rm -f "$BAK_DIR/$bak"
-    log "✓ Phase 1 complete"
+    log "✓ Phase 1 complete (deleted $bak)"
 }
 
 # =============================================================================
@@ -120,14 +141,10 @@ phase_hrm() {
 
 phase_edu_dau() {
     log "=== Phase 2: EDU_DAU ==="
-    check_disk 60
+    check_disk 50
 
     local bak="EDU_DAU_slim.bak"
-    if ! rclone ls "$GDRIVE_REMOTE" | grep -q "$bak"; then
-        fail "$bak not found in $GDRIVE_REMOTE — run preprocess-bak.ps1 first on Windows"
-    fi
-    log "Downloading $bak (~16GB)..."
-    rclone copy "$GDRIVE_REMOTE/$bak" "$BAK_DIR/" --progress
+    [ ! -f "$BAK_DIR/$bak" ] && fail "$bak not in $BAK_DIR (run preprocess-bak.ps1 on Windows + upload to GDrive)"
 
     ensure_mssql_running
     restore_bak "$bak" "EDU_ORG2" "EDU_ORG2_log" "EDU_DAU"
@@ -141,7 +158,7 @@ phase_edu_dau() {
 
     drop_mssql_db "EDU_DAU"
     rm -f "$BAK_DIR/$bak"
-    log "✓ Phase 2 complete"
+    log "✓ Phase 2 complete (deleted $bak, freed ~16GB)"
 }
 
 # =============================================================================
@@ -150,12 +167,10 @@ phase_edu_dau() {
 
 phase_edu_data() {
     log "=== Phase 3: EDU_DAU_DATA ==="
-    check_disk 30
+    check_disk 25
 
-    local bak=$(rclone ls "$GDRIVE_REMOTE" | awk '/EDU_DAU_DATA.*bak$/ {print $2; exit}')
-    [ -z "$bak" ] && fail "EDU_DAU_DATA.bak not found"
-    log "Downloading $bak (~5.7GB)..."
-    rclone copy "$GDRIVE_REMOTE/$bak" "$BAK_DIR/" --progress
+    local bak=$(ls "$BAK_DIR" 2>/dev/null | grep -E "^EDU_DAU_DATA.*\.bak$" | head -1)
+    [ -z "$bak" ] && fail "EDU_DAU_DATA.bak not in $BAK_DIR"
 
     ensure_mssql_running
     restore_bak "$bak" "EDU_BTU_DATA" "EDU_BTU_DATA_log" "EDU_DAU_DATA"
@@ -166,7 +181,7 @@ phase_edu_data() {
 
     drop_mssql_db "EDU_DAU_DATA"
     rm -f "$BAK_DIR/$bak"
-    log "✓ Phase 3 complete"
+    log "✓ Phase 3 complete (deleted $bak)"
 }
 
 # =============================================================================
@@ -302,19 +317,20 @@ main() {
     source .venv/bin/activate || fail "Run: python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt"
 
     log "Starting sequential ETL pipeline"
-    log "Strategy: process each .bak → ETL → drop → next"
+    log "Strategy: gdown all .bak once → process each → drop DB + delete .bak"
     if [ -n "${GITHUB_PAT:-}" ]; then
         log "Auto-commit report:  ${G}ON${N} → ${GITHUB_REPO:-?}"
     else
         log "Auto-commit report:  ${Y}OFF${N} (set GITHUB_PAT in .env)"
     fi
     if [ -n "${GDRIVE_OUTPUT_PATH:-}" ]; then
-        log "Auto-upload GDrive:  ${G}ON${N} → ${GDRIVE_OUTPUT_PATH}"
+        log "Auto-upload GDrive:  ${G}ON${N} → ${GDRIVE_OUTPUT_PATH} (cần rclone OAuth)"
     else
-        log "Auto-upload GDrive:  ${Y}OFF${N} (set GDRIVE_OUTPUT_PATH in .env)"
+        log "Auto-upload GDrive:  ${Y}OFF${N} (output stay on VPS, fetch via SCP)"
     fi
     log ""
 
+    download_all_baks
     phase_hrm
     phase_edu_dau
     phase_edu_data

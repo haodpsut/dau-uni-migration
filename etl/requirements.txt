@@ -19,5 +19,8 @@ rich>=13.7.0
 # MinIO (S3-compatible)
 minio>=7.2.0
 
+# Google Drive download (public folder/file — no OAuth)
+gdown>=5.2.0
+
 # Data manipulation
 pandas>=2.2.0           # optional, dùng cho transform phức tạp
