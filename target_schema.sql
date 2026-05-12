@@ -73,7 +73,7 @@ CREATE TYPE academic.semester_type         AS ENUM ('fall', 'spring', 'summer', 
 
 CREATE TABLE master.countries (
     id          BIGSERIAL PRIMARY KEY,
-    code        VARCHAR(3) UNIQUE NOT NULL,        -- ISO 3166-1 alpha-3
+    code        VARCHAR(20) UNIQUE NOT NULL,       -- vendor uses non-ISO codes (e.g. "Singa")
     name        TEXT NOT NULL,
     name_native TEXT,
     legacy_id   INTEGER,
@@ -333,11 +333,11 @@ CREATE TABLE hr.employees (
     religion_id         BIGINT REFERENCES master.religions(id),
     marital_status      master.marital_status_type,
 
-    -- Contact
+    -- Contact (phone widened — vendor data đôi khi nhồi "phone1 - phone2" trong 1 trường)
     email               TEXT,
     email_personal      TEXT,
-    phone               VARCHAR(20),
-    phone_alt           VARCHAR(20),
+    phone               VARCHAR(50),
+    phone_alt           VARCHAR(50),
 
     -- Address (chuẩn)
     permanent_address   TEXT,
@@ -472,7 +472,7 @@ CREATE TABLE hr.employee_family_relations (
     date_of_birth   DATE,
     occupation      TEXT,
     workplace       TEXT,
-    phone           VARCHAR(20),
+    phone           VARCHAR(50),
     is_dependent    BOOLEAN DEFAULT FALSE,                   -- người phụ thuộc giảm trừ thuế
     notes           TEXT,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -739,10 +739,10 @@ CREATE TABLE student.students (
     contact_address     TEXT,                               -- DiaChiLienLac (99.9%)
     contact_ward_id     BIGINT REFERENCES master.wards(id),
 
-    -- Phones
-    phone               VARCHAR(20) NOT NULL,               -- SoDienThoai (~100%)
-    phone_alt           VARCHAR(20),                        -- SoDienThoai2 (99%)
-    phone_parent        VARCHAR(20),                        -- SoDienThoaiPhuHuynh
+    -- Phones (widened to handle "phone1 - phone2" patterns in vendor data)
+    phone               VARCHAR(50) NOT NULL,               -- SoDienThoai (~100%)
+    phone_alt           VARCHAR(50),                        -- SoDienThoai2 (99%)
+    phone_parent        VARCHAR(50),                        -- SoDienThoaiPhuHuynh
 
     email               TEXT,                               -- Email (99.9%)
     email_parent        TEXT,                               -- EmailPhuHuynh

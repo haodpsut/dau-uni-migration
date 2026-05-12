@@ -36,3 +36,8 @@ Thumbs.db
 _*.txt
 _*.csv
 _*.sql
+
+# PAT files (sensitive — never commit)
+pat.txt
+*_pat.txt
+*.pat

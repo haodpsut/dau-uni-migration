@@ -46,9 +46,13 @@ download_all_baks() {
     find "$BAK_DIR" -mindepth 2 -name "*.bak" -exec mv {} "$BAK_DIR/" \;
     find "$BAK_DIR" -mindepth 1 -type d -empty -delete
 
+    # CRITICAL: gdown downloads với perm 600 (root only). mssql container chạy với UID 10001,
+    # không đọc được. Set 644 để container đọc được.
+    chmod 644 "$BAK_DIR"/*.bak
+
     ls -lh "$BAK_DIR"/*.bak
     touch "$BAK_DIR/.downloaded"
-    log "  ✓ All .bak downloaded"
+    log "  ✓ All .bak downloaded + permissions fixed"
 }
 
 check_disk() {
@@ -91,16 +95,25 @@ restore_bak() {
     local target_db=$4
 
     log "Restoring $target_db from $bak_name..."
-    docker exec $MSSQL_CONTAINER /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$MSSQL_PASS" -C -Q "
+
+    # Step 1: RESTORE phải ở batch riêng. Nếu gộp với USE/ALTER referencing $target_db,
+    # SQL Server validate cả batch trước → USE fail vì DB chưa tồn tại → RESTORE bị block.
+    docker exec $MSSQL_CONTAINER /opt/mssql-tools18/bin/sqlcmd \
+        -S localhost -U sa -P "$MSSQL_PASS" -C -b -Q "
         RESTORE DATABASE $target_db FROM DISK='/backups/$bak_name'
         WITH MOVE '$logical_name' TO '/var/opt/mssql/data/$target_db.mdf',
              MOVE '$logical_log' TO '/var/opt/mssql/data/$target_db.ldf',
-             REPLACE, STATS=20;
+             REPLACE, STATS=20
+    " || fail "RESTORE failed for $target_db (check 'docker logs $MSSQL_CONTAINER')"
+
+    # Step 2: SHRINK log ở batch riêng (-d để set DB context tránh dùng USE)
+    docker exec $MSSQL_CONTAINER /opt/mssql-tools18/bin/sqlcmd \
+        -S localhost -U sa -P "$MSSQL_PASS" -C -b -d "$target_db" -Q "
         ALTER DATABASE $target_db SET RECOVERY SIMPLE WITH NO_WAIT;
-        USE $target_db;
         DBCC SHRINKFILE (N'$logical_log', 1) WITH NO_INFOMSGS;
-    " || fail "Restore failed for $target_db"
-    log "  ✓ $target_db restored"
+    " || warn "Shrink log failed for $target_db (non-critical)"
+
+    log "  ✓ $target_db restored + log shrunk to 1MB"
 }
 
 drop_mssql_db() {
