@@ -195,20 +195,34 @@ def load_districts(conn) -> int:
 def load_wards(conn) -> int:
     """HRM_DAU.DM_BH_Xa → master.wards.
 
-    QUAN TRỌNG: Source CHỈ CÓ text codes — no FK ID to DM_Huyen!
+    QUAN TRỌNG: Source CHỈ CÓ text codes — no FK ID to DM_Huyen.
     Schema source: Id, MaTinh, MaHuyen, MaXa, TenXa.
-    Phải build map MaHuyen → district.id qua DM_Huyen.MaHuyen.
+
+    `MaHuyen` không unique toàn quốc (cùng code dùng ở nhiều tỉnh).
+    Phải resolve qua **(MaTinh, MaHuyen) composite** để chính xác district.
     """
-    # Build map: source MaHuyen text → target district.id
-    huyen_codes = fetch_all_dicts(
+    # 1. Build (MaTinhThanh → IDTinhThanh) map
+    tinh_codes = fetch_all_dicts(
         settings.SOURCE_DB_HRM,
-        "SELECT Id, MaHuyen FROM DM_Huyen WHERE MaHuyen IS NOT NULL",
+        "SELECT IDTinhThanh, MaTinhThanh FROM DM_TinhThanh WHERE MaTinhThanh IS NOT NULL",
     )
-    huyen_legacy_id_by_code: dict[str, int] = {
-        r["MaHuyen"].strip(): r["Id"]
-        for r in huyen_codes
-        if r.get("MaHuyen") and r["MaHuyen"].strip()
+    tinh_id_by_code: dict[str, int] = {
+        r["MaTinhThanh"].strip(): r["IDTinhThanh"]
+        for r in tinh_codes
+        if r.get("MaTinhThanh") and r["MaTinhThanh"].strip()
     }
+
+    # 2. Build ((IDTinh, MaHuyen) → DM_Huyen.Id) composite map
+    huyen_records = fetch_all_dicts(
+        settings.SOURCE_DB_HRM,
+        "SELECT Id, IDTinh, MaHuyen FROM DM_Huyen WHERE MaHuyen IS NOT NULL",
+    )
+    huyen_id_by_tinh_huyen: dict[tuple[int, str], int] = {}
+    for r in huyen_records:
+        if r.get("IDTinh") and r.get("MaHuyen"):
+            huyen_id_by_tinh_huyen[(r["IDTinh"], r["MaHuyen"].strip())] = r["Id"]
+
+    # 3. Mapper từ legacy district Id → target district id
     district_map = LegacyIdMapper(conn, "master.districts")
 
     src = fetch_all_dicts(
@@ -217,23 +231,50 @@ def load_wards(conn) -> int:
     )
 
     rows = []
-    skipped = 0
+    skipped_orphan = 0
+    skipped_dup = 0
+    seen: set[tuple[str, int]] = set()  # dedup (code, district_id) within batch
+
     for r in src:
+        ma_tinh = _safe_str(r.get("MaTinh"))
         ma_huyen = _safe_str(r.get("MaHuyen"))
-        district_legacy_id = huyen_legacy_id_by_code.get(ma_huyen) if ma_huyen else None
-        district_id = district_map.lookup(district_legacy_id)
-        if not district_id:
-            skipped += 1
+        if not (ma_tinh and ma_huyen):
+            skipped_orphan += 1
             continue
+
+        # Resolve province via MaTinh text → IDTinhThanh
+        tinh_id = tinh_id_by_code.get(ma_tinh)
+        if not tinh_id:
+            skipped_orphan += 1
+            continue
+
+        # Resolve district via (IDTinh, MaHuyen) → DM_Huyen.Id
+        huyen_legacy_id = huyen_id_by_tinh_huyen.get((tinh_id, ma_huyen))
+        district_id = district_map.lookup(huyen_legacy_id)
+        if not district_id:
+            skipped_orphan += 1
+            continue
+
+        ma_xa = _safe_str(r.get("MaXa")) or _gen_code("W", r["Id"])
+
+        # Dedup within batch — source có thể có duplicate (rare)
+        key = (ma_xa, district_id)
+        if key in seen:
+            skipped_dup += 1
+            continue
+        seen.add(key)
+
         rows.append((
-            _safe_str(r.get("MaXa")) or _gen_code("W", r["Id"]),
+            ma_xa,
             _safe_str(r.get("TenXa")) or "?",
             district_id,
             r["Id"],
         ))
 
-    if skipped:
-        logger.warning(f"Skipped {skipped:,} wards with missing district FK (no MaHuyen match)")
+    if skipped_orphan:
+        logger.warning(f"Skipped {skipped_orphan:,} wards: missing district FK")
+    if skipped_dup:
+        logger.warning(f"Skipped {skipped_dup:,} wards: duplicate (code, district_id)")
 
     if settings.ETL_TRUNCATE_BEFORE_LOAD:
         truncate_table(conn, "master.wards")

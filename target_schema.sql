@@ -114,24 +114,26 @@ COMMENT ON TABLE master.provinces IS 'Source: HRM_DAU.DM_TinhThanh (65) — drop
 
 CREATE TABLE master.districts (
     id           BIGSERIAL PRIMARY KEY,
-    code         VARCHAR(10) UNIQUE NOT NULL,
+    code         VARCHAR(10) NOT NULL,
     name         TEXT NOT NULL,
     province_id  BIGINT NOT NULL REFERENCES master.provinces(id),
     legacy_id    INTEGER,
     created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
-    deleted_at   TIMESTAMPTZ
+    deleted_at   TIMESTAMPTZ,
+    UNIQUE (code, province_id)              -- district code unique trong tỉnh, không globally
 );
 CREATE INDEX idx_districts_province ON master.districts(province_id) WHERE deleted_at IS NULL;
 COMMENT ON TABLE master.districts IS 'Source: HRM_DAU.DM_Huyen (760) — drop trùng DM_BH_Huyen';
 
 CREATE TABLE master.wards (
     id           BIGSERIAL PRIMARY KEY,
-    code         VARCHAR(10) UNIQUE NOT NULL,
+    code         VARCHAR(10) NOT NULL,
     name         TEXT NOT NULL,
     district_id  BIGINT NOT NULL REFERENCES master.districts(id),
     legacy_id    INTEGER,
     created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
-    deleted_at   TIMESTAMPTZ
+    deleted_at   TIMESTAMPTZ,
+    UNIQUE (code, district_id)              -- ward code unique trong huyện
 );
 CREATE INDEX idx_wards_district ON master.wards(district_id) WHERE deleted_at IS NULL;
 COMMENT ON TABLE master.wards IS 'Source: HRM_DAU.DM_BH_Xa (11,706 — chuẩn BHXH)';
