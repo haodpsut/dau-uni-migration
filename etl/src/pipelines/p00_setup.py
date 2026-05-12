@@ -80,6 +80,34 @@ BEGIN
     EXECUTE format('ALTER TABLE %I.%I DROP CONSTRAINT %I', r.sch, r.tbl, r.conname);
   END LOOP;
 END $$;
+
+-- 4. Drop FKs around identity.users (block cascade explosion)
+-- Why: hr.employees, student.students, audit, files all have *_by FK to identity.users.
+-- identity.users has FK back to students/employees (for "user IS a student/employee" link).
+-- When TRUNCATE student.students CASCADE → users → ALL *_by cascade → wipes everything.
+-- Drop these FKs to make audit cols informational only.
+DO $$ DECLARE r RECORD;
+BEGIN
+  -- 4a. Drop FK from identity.users to students/employees (block reverse cascade)
+  FOR r IN
+    SELECT con.conname
+    FROM pg_constraint con
+    WHERE con.conrelid = 'identity.users'::regclass AND con.contype = 'f'
+  LOOP
+    EXECUTE format('ALTER TABLE identity.users DROP CONSTRAINT %I', r.conname);
+  END LOOP;
+
+  -- 4b. Drop all FKs referencing identity.users (audit *_by columns)
+  FOR r IN
+    SELECT n.nspname AS sch, c.relname AS tbl, con.conname
+    FROM pg_constraint con
+    JOIN pg_class c ON c.oid = con.conrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE con.confrelid = 'identity.users'::regclass AND con.contype = 'f'
+  LOOP
+    EXECUTE format('ALTER TABLE %I.%I DROP CONSTRAINT %I', r.sch, r.tbl, r.conname);
+  END LOOP;
+END $$;
 """
 
 
