@@ -294,11 +294,17 @@ def run() -> int:
 # =============================================================================
 
 def load_graduations(conn) -> int:
-    """Source: DT_DSSinhVienTotNghiep (17,969 rows). Verify column names khi run."""
+    """Source: DT_DSSinhVienTotNghiep (17,969 rows).
+
+    Verified column names (2026-05-08): NgayCapBang, NgayRaQD (NOT NgayTotNghiep),
+    SoHieuVanBang (NOT SoBangCap), DiemTotNghiep + DiemTotNghiepHe10,
+    XepLoaiTotNghiep (NOT XepLoai), SoQuyetDinhTotNghiep. KHÔNG có TongSoTinChi.
+    """
     src = fetch_all_dicts(
         settings.SOURCE_DB_EDU,
-        "SELECT Id, IDSinhVien, NgayTotNghiep, SoBangCap, XepLoai, "
-        "DiemTBChung, TongSoTinChi FROM DT_DSSinhVienTotNghiep",
+        "SELECT Id, IDSinhVien, NgayCapBang, NgayRaQD, SoHieuVanBang, "
+        "XepLoaiTotNghiep, DiemTotNghiep, DiemTotNghiepHe10, "
+        "SoQuyetDinhTotNghiep, GhiChu FROM DT_DSSinhVienTotNghiep",
     )
     student_map = LegacyIdMapper(conn, "student.students")
 
@@ -311,13 +317,15 @@ def load_graduations(conn) -> int:
             continue
         rows.append((
             r["Id"], student_id,
-            r.get("NgayTotNghiep") or datetime.now().date(),
-            _safe_str(r.get("SoBangCap")) or f"GRAD-{r['Id']}",
+            r.get("NgayCapBang") or r.get("NgayRaQD") or datetime.now().date(),
+            _safe_str(r.get("SoHieuVanBang")) or f"GRAD-{r['Id']}",
             None,                                              # diploma_type
-            _safe_str(r.get("XepLoai")),
-            r.get("DiemTBChung"),
-            _safe_int(r.get("TongSoTinChi")),
-            None, None, None,                                  # decision_id, issued_date, notes
+            _safe_str(r.get("XepLoaiTotNghiep")),
+            r.get("DiemTotNghiepHe10") or r.get("DiemTotNghiep"),
+            None,                                              # total_credits (not in source)
+            None,                                              # decision_id
+            r.get("NgayRaQD"),                                 # issued_date
+            _safe_str(r.get("GhiChu")),
         ))
     if skipped:
         logger.warning(f"Skipped {skipped} graduations (missing student FK)")
