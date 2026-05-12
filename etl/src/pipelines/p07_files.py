@@ -71,7 +71,7 @@ def load_student_photos(conn) -> int:
     bucket = settings.MINIO_BUCKET_STUDENTS
     ensure_bucket(client, bucket)
 
-    student_map = LegacyIdMapper(conn, "student.students")
+    student_map = LegacyIdMapper(conn, "student.students", jsonb_key="DT_SinhVien")
     uploaded = 0
     skipped = 0
 
@@ -193,7 +193,7 @@ def load_grade_change_records(conn) -> int:
     bucket = settings.MINIO_BUCKET_GRADE_CHANGES
     ensure_bucket(client, bucket)
 
-    student_map = LegacyIdMapper(conn, "student.students")
+    student_map = LegacyIdMapper(conn, "student.students", jsonb_key="DT_SinhVien")
     course_class_map = LegacyIdMapper(conn, "academic.course_classes")
 
     uploaded = 0

@@ -306,7 +306,7 @@ def load_graduations(conn) -> int:
         "XepLoaiTotNghiep, DiemTotNghiep, DiemTotNghiepHe10, "
         "SoQuyetDinhTotNghiep, GhiChu FROM DT_DSSinhVienTotNghiep",
     )
-    student_map = LegacyIdMapper(conn, "student.students")
+    student_map = LegacyIdMapper(conn, "student.students", jsonb_key="DT_SinhVien")
 
     rows = []
     skipped = 0

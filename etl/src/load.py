@@ -99,17 +99,44 @@ def get_id_by_legacy(conn: psycopg.Connection, qualified_table: str, legacy_id: 
 class LegacyIdMapper:
     """In-memory cache for legacy_id → new id lookups during ETL.
 
+    Hai mode:
+      • scalar (default): `legacy_id INTEGER` column. Quy ước cho hầu hết bảng.
+      • JSONB: `legacy_ids JSONB` column với key cụ thể. Dùng cho student.students
+        (vì merge 4 bảng nguồn — DT_HoSoSinhVien, DT_SinhVien, ...).
+
     Usage:
+        # Scalar
         mapper = LegacyIdMapper(conn, 'master.provinces')
-        new_id = mapper.lookup(48)  # returns matching id or None
+
+        # JSONB (student.students chứa {"DT_SinhVien": 12345, ...})
+        mapper = LegacyIdMapper(conn, 'student.students', jsonb_key='DT_SinhVien')
+
+        new_id = mapper.lookup(48)
     """
 
-    def __init__(self, conn: psycopg.Connection, qualified_table: str):
+    def __init__(
+        self,
+        conn: psycopg.Connection,
+        qualified_table: str,
+        jsonb_key: str | None = None,
+    ):
         self._cache: dict[int, int] = {}
         with conn.cursor() as cur:
-            cur.execute(f"SELECT legacy_id, id FROM {qualified_table} WHERE legacy_id IS NOT NULL")
+            if jsonb_key:
+                cur.execute(
+                    f"SELECT (legacy_ids->>%s)::BIGINT AS source_id, id "
+                    f"FROM {qualified_table} "
+                    f"WHERE legacy_ids ? %s",
+                    (jsonb_key, jsonb_key),
+                )
+            else:
+                cur.execute(
+                    f"SELECT legacy_id, id FROM {qualified_table} WHERE legacy_id IS NOT NULL"
+                )
             for row in cur:
-                self._cache[row["legacy_id"]] = row["id"]
+                key = row["source_id"] if jsonb_key else row["legacy_id"]
+                if key is not None:
+                    self._cache[int(key)] = row["id"]
         logger.debug(f"LegacyIdMapper for {qualified_table}: {len(self._cache):,} entries cached")
 
     def lookup(self, legacy_id: int | None) -> int | None:

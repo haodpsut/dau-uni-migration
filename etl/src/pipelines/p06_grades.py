@@ -249,7 +249,7 @@ def run() -> int:
         ensure_partitions(conn, years_in_use)
 
         mappers = {
-            "students":      LegacyIdMapper(conn, "student.students"),
+            "students":       LegacyIdMapper(conn, "student.students", jsonb_key="DT_SinhVien"),
             "course_classes": LegacyIdMapper(conn, "academic.course_classes"),
         }
 
