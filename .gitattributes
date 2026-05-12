@@ -1,0 +1,2 @@
+etl/output/csv/*.csv filter=lfs diff=lfs merge=lfs -text
+etl/output/*.dump.gz filter=lfs diff=lfs merge=lfs -text
