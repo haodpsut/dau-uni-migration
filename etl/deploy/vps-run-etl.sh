@@ -144,8 +144,8 @@ phase_hrm() {
     python run.py employees
 
     drop_mssql_db "HRM_DAU"
-    rm -f "$BAK_DIR/$bak"
-    log "✓ Phase 1 complete (deleted $bak)"
+    # NOTE: KHÔNG xóa .bak để có thể resume nếu Phase 2/3 fail mà không re-download
+    log "✓ Phase 1 complete"
 }
 
 # =============================================================================
@@ -170,8 +170,8 @@ phase_edu_dau() {
     python run.py grades
 
     drop_mssql_db "EDU_DAU"
-    rm -f "$BAK_DIR/$bak"
-    log "✓ Phase 2 complete (deleted $bak, freed ~16GB)"
+    # KHÔNG xóa .bak — disk dồi dào, giữ để resume nếu cần
+    log "✓ Phase 2 complete"
 }
 
 # =============================================================================
@@ -193,8 +193,7 @@ phase_edu_data() {
     python run.py audit
 
     drop_mssql_db "EDU_DAU_DATA"
-    rm -f "$BAK_DIR/$bak"
-    log "✓ Phase 3 complete (deleted $bak)"
+    log "✓ Phase 3 complete"
 }
 
 # =============================================================================

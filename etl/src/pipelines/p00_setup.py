@@ -34,8 +34,10 @@ BEGIN
     JOIN pg_class c ON c.oid = a.attrelid
     JOIN pg_namespace n ON n.oid = c.relnamespace
     WHERE n.nspname IN ('master','hr','academic','student','files','audit','identity')
+      AND c.relkind IN ('r', 'p')                 -- only regular + partitioned tables, NOT sequences/views
       AND a.attnotnull = TRUE
       AND a.attnum > 0
+      AND NOT a.attisdropped
       AND a.attname NOT IN ('id', 'created_at')
       AND NOT EXISTS (
           SELECT 1 FROM pg_constraint
