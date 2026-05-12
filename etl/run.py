@@ -133,6 +133,21 @@ def all():
 
 
 @app.command()
+def export_csv(schema: str = "", table: str = "", skip_audit: bool = False):
+    """Export all migrated tables to CSV files (output/csv/)."""
+    setup_logging()
+    import subprocess
+    args = ["python", str(Path(__file__).parent / "scripts" / "export_csv.py")]
+    if schema:
+        args += ["--schema", schema]
+    if table:
+        args += ["--table", table]
+    if skip_audit:
+        args.append("--skip-audit")
+    subprocess.run(args, check=True)
+
+
+@app.command()
 def status():
     """Row counts per schema/table."""
     setup_logging()
