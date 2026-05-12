@@ -14,7 +14,7 @@ N='\033[0m'
 
 # Config
 GDRIVE_FOLDER_ID="${GDRIVE_BACKUP_FOLDER_ID:-1OzCtCJ7AVcR_Ox0owOtKe7DFfFT72zJz}"
-BAK_DIR="/tmp/dau-bak"
+BAK_DIR="${BAK_DIR:-/opt/dau-uni/bak}"   # KHÔNG dùng /tmp (thường là tmpfs RAM-backed)
 MSSQL_CONTAINER="mssql-temp"
 MSSQL_PASS="${SOURCE_PASSWORD:-YourStrong@Pass1}"
 
@@ -39,7 +39,7 @@ download_all_baks() {
     log "  (~22GB total — 5-10 phút tùy bandwidth)"
 
     gdown --folder "https://drive.google.com/drive/folders/$GDRIVE_FOLDER_ID" \
-        -O "$BAK_DIR" --remaining-ok \
+        -O "$BAK_DIR" \
         || fail "gdown download failed. Check folder is shared 'Anyone with link can view'"
 
     # gdown nested files into a subfolder named after folder — flatten
