@@ -81,7 +81,11 @@ BEGIN
   END LOOP;
 END $$;
 
--- 4. Drop FKs around identity.users (block cascade explosion)
+-- 4. Re-add essential UNIQUEs needed by ETL (ON CONFLICT in p07_files)
+ALTER TABLE files.attachments
+    ADD CONSTRAINT attachments_bucket_object_key_key UNIQUE (bucket, object_key);
+
+-- 5. Drop FKs around identity.users (block cascade explosion)
 -- Why: hr.employees, student.students, audit, files all have *_by FK to identity.users.
 -- identity.users has FK back to students/employees (for "user IS a student/employee" link).
 -- When TRUNCATE student.students CASCADE → users → ALL *_by cascade → wipes everything.
