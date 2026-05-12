@@ -615,8 +615,8 @@ CREATE TABLE academic.semesters (
     start_date         DATE,
     end_date           DATE,
     is_current         BOOLEAN DEFAULT FALSE,
-    created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE (academic_year_id, semester_type)
+    created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
+    -- UNIQUE (academic_year_id, semester_type) dropped — vendor có nhiều DM_Dot per (year, type)
 );
 
 CREATE TABLE academic.programs (
@@ -713,7 +713,7 @@ COMMENT ON TABLE academic.course_classes IS 'Lớp học phần. Source: EDU_DAU
 
 CREATE TABLE student.students (
     id                  BIGSERIAL PRIMARY KEY,
-    student_code        VARCHAR(20) UNIQUE NOT NULL,
+    student_code        VARCHAR(20) NOT NULL,                              -- UNIQUE dropped (source dups)
     legacy_ids          JSONB,                              -- {"DT_HoSoSinhVien": 12345, "DT_SinhVien": 6789}
 
     -- Personal (TIER 1: 100% used)
